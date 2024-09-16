@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 
 void main() {
   runApp(TodoApp());
@@ -27,6 +29,7 @@ class TodoAppState extends ChangeNotifier {
   var todos = <String>[];
   var worksDone = <String>[];
   var worksDeleted = <String>[];
+  String notification = '';
   var inputBox = TextEditingController();
   void add(String todo){
     //check if input is empty
@@ -38,12 +41,17 @@ class TodoAppState extends ChangeNotifier {
   }
   void remove(String todo){
     todos.remove(todo);
+    worksDone.remove(todo);
     worksDeleted.add(todo + ' (deleted)');
     notifyListeners();
   }
   void markAsDone(String todo){
     todos.remove(todo);
     worksDone.add(todo + ' (done)');
+    notifyListeners();
+  }
+  void permentlyDelete(String todo){
+    worksDeleted.remove(todo);
     notifyListeners();
   }
 }
@@ -140,6 +148,13 @@ class TodoListPage extends StatelessWidget {
           ),
         ),
 
+        IconButton(
+          icon: Icon(Icons.save),
+          onPressed: (){
+            List<String> todos = context.read<TodoAppState>().todos;
+            saveTodosToFile(context, todos);
+          },
+        ),
         Expanded(
           child: ListView.builder(
             itemCount: context.watch<TodoAppState>().todos.length,
@@ -180,6 +195,12 @@ class WorksDonePage extends StatelessWidget {
       itemBuilder: (context, index){
         return ListTile(
           title: Text(context.watch<TodoAppState>().worksDone[index]),
+          trailing: IconButton(
+            icon: Icon(Icons.delete),
+            onPressed: () {
+              context.read<TodoAppState>().remove(context.read<TodoAppState>().worksDone[index]);
+            },
+          ),
         );
       },
     );
@@ -194,8 +215,32 @@ class removeTodoPage extends StatelessWidget {
       itemBuilder: (context, index){
         return ListTile(
           title: Text(context.watch<TodoAppState>().worksDeleted[index]),
+          trailing: IconButton(
+            icon: Icon(Icons.delete),
+            onPressed: () {
+              context.read<TodoAppState>().permentlyDelete(context.read<TodoAppState>().worksDeleted[index]);
+            },
+          ),
         );
       },
     );
+  }
+}
+
+Future<void> saveTodosToFile(BuildContext context, List<String>todos) async {
+  try{
+    final directory = await getApplicationDocumentsDirectory();
+    final file = File('${directory.path}/todos.txt');
+    await file.writeAsString(todos.join('\n'));
+
+    //set notification /data/user/0/com.example.todolist/app_flutter/todos.txt
+    context.read<TodoAppState>().notification = 'Todos saved to ${directory.path}';
+    context.read<TodoAppState>().notifyListeners();
+    print(context.read<TodoAppState>().notification);
+
+  } catch(e){
+    context.read<TodoAppState>().notification = 'Failed to save. Error: $e';
+    context.read<TodoAppState>().notifyListeners();
+    print(context.read<TodoAppState>().notification);
   }
 }
