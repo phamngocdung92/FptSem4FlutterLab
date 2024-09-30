@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+import 'package:todolist/login_screen.dart';
 import 'package:todolist/todoDatabaseHelper.dart';
 import 'package:todolist/todoModel.dart';
 
@@ -116,6 +117,17 @@ class _homePageState extends State<homePage>{
                 ),
               ],
             ),
+            floatingActionButton: FloatingActionButton(
+              onPressed: () {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (context) => LoginScreen()),
+                );
+              },
+              child: Icon(Icons.logout),
+              tooltip: 'Logout',
+            ),
+            floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
           ),
         );
       },
