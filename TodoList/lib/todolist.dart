@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:path/path.dart';
 
 void main() {
-  runApp(TodoApp());
+  runApp(TodoApp2());
 }
 
 class TodoApp extends StatelessWidget {
@@ -140,6 +142,8 @@ class TodoListPage extends StatelessWidget {
                   onPressed: () {
                     final todoAppState = context.read<TodoAppState>();
                     todoAppState.add(todoAppState.inputBox.text);
+                    //add to database
+
                     todoAppState.inputBox.clear();
                   },
                 ),
@@ -242,5 +246,221 @@ Future<void> saveTodosToFile(BuildContext context, List<String>todos) async {
     context.read<TodoAppState>().notification = 'Failed to save. Error: $e';
     context.read<TodoAppState>().notifyListeners();
     print(context.read<TodoAppState>().notification);
+  }
+}
+
+class Todo {
+  final int? id;
+  final String todoName;
+  final bool isCompleted;
+
+  Todo({
+    this.id,
+    required this.todoName,
+    this.isCompleted = false,
+  });
+
+  // Convert a Todo into a Map. The keys must match the column names in the database.
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'todoName': todoName,
+      'isCompleted': isCompleted ? 1 : 0,
+    };
+  }
+
+  // Create a Todo from a Map.
+  factory Todo.fromMap(Map<String, dynamic> map) {
+    return Todo(
+      id: map['id'],
+      todoName: map['todoName'],
+      isCompleted: map['isCompleted'] == 1,
+    );
+  }
+}
+class DatabaseHelper {
+  static final DatabaseHelper _instance = DatabaseHelper._internal();
+  static Database? _database;
+
+  factory DatabaseHelper() {
+    return _instance;
+  }
+
+  DatabaseHelper._internal();
+
+  Future<Database> get database async {
+    if (_database != null) return _database!;
+    _database = await _initDatabase();
+    return _database!;
+  }
+
+  Future<Database> _initDatabase() async {
+    String path = join(await getDatabasesPath(), 'todo_list.db');
+    return await openDatabase(
+      path,
+      version: 1,
+      onCreate: _onCreate,
+    );
+  }
+
+  Future<void> _onCreate(Database db, int version) async {
+    await db.execute('''
+      CREATE TABLE todos(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        todoName TEXT,
+        isCompleted INTEGER
+      )
+    ''');
+  }
+
+  Future<int> insertTodo(Todo todo) async {
+    final db = await database;
+    return await db.insert('todos', todo.toMap());
+  }
+
+  Future<List<Todo>> getTodos() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query('todos');
+    return List.generate(maps.length, (i) {
+      return Todo.fromMap(maps[i]);
+    });
+  }
+
+  Future<int> updateTodo(Todo todo) async {
+    final db = await database;
+    return await db.update(
+      'todos',
+      todo.toMap(),
+      where: 'id = ?',
+      whereArgs: [todo.id],
+    );
+  }
+
+  Future<int> deleteTodo(int id) async {
+    final db = await database;
+    return await db.delete(
+      'todos',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+}
+
+//ver2
+class TodoApp2 extends StatefulWidget {
+  @override
+  _TodoAppState createState() => _TodoAppState();
+}
+
+class _TodoAppState extends State<TodoApp2> {
+  final _dbHelper = DatabaseHelper();
+  final _formKey = GlobalKey<FormState>();
+  final _todoNameController = TextEditingController();
+
+  List<Todo> _todos = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchTodos();
+  }
+
+  Future<void> _fetchTodos() async {
+    final todos = await _dbHelper.getTodos();
+    setState(() {
+      _todos = todos;
+    });
+  }
+
+  void _addTodo() async {
+    if (_formKey.currentState!.validate()) {
+      final todo = Todo(
+        todoName: _todoNameController.text,
+      );
+      await _dbHelper.insertTodo(todo);
+      _todoNameController.clear();
+      _fetchTodos();
+    }
+  }
+
+  void _toggleCompletion(Todo todo) async {
+    final updatedTodo = Todo(
+      id: todo.id,
+      todoName: todo.todoName,
+      isCompleted: !todo.isCompleted,
+    );
+    await _dbHelper.updateTodo(updatedTodo);
+    _fetchTodos();
+  }
+
+  void _deleteTodo(int id) async {
+    await _dbHelper.deleteTodo(id);
+    _fetchTodos();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      home: Scaffold(
+        appBar: AppBar(title: Text('To-Do List')),
+        body: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  children: [
+                    TextFormField(
+                      decoration: InputDecoration(labelText: 'Title'),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter a title';
+                        }
+                        return null;
+                      },
+                    ),
+                    TextFormField(
+                      controller: _todoNameController,
+                      decoration: InputDecoration(labelText: 'Description'),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter a description';
+                        }
+                        return null;
+                      },
+                    ),
+                    ElevatedButton(
+                      onPressed: _addTodo,
+                      child: Text('Add To-Do'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Expanded(
+              child: ListView.builder(
+                itemCount: _todos.length,
+                itemBuilder: (context, index) {
+                  final todo = _todos[index];
+                  return ListTile(
+                    title: Text(todo.todoName),
+                    trailing: Checkbox(
+                      value: todo.isCompleted,
+                      onChanged: (value) {
+                        _toggleCompletion(todo);
+                      },
+                    ),
+                    onLongPress: () {
+                      _deleteTodo(todo.id!);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
